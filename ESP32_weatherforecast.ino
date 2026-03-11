@@ -13,18 +13,14 @@
 
 #include "secrets.h" 
 
-// ==========================================
 // CONFIGURAÇÕES DO USUÁRIO
-// ==========================================
 String city = "Curitiba,PR,BR"; 
 String nomeCidade = "Curitiba"; 
 
 int HORA_ALERTA = 7;   
 int MINUTO_ALERTA = 0; 
 
-// ==========================================
 // DEFINIÇÕES DE HARDWARE E PINOS
-// ==========================================
 #define DHTPIN 4
 #define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
@@ -43,9 +39,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define BOTAO_RELATORIO 18
 #define BOTAO_LUZES 19
 
-// ==========================================
 // VARIÁVEIS GLOBAIS DE ESTADO
-// ==========================================
 WiFiClientSecure secured_client;
 UniversalTelegramBot bot(BOT_TOKEN, secured_client);
 WiFiUDP ntpUDP;
@@ -79,9 +73,8 @@ bool esperandoNomeCidade = false;
 String tecladoPrincipal = "[[{\"text\":\"🌡️ Clima\", \"callback_data\":\"/clima\"}, {\"text\":\"💡 Luzes\", \"callback_data\":\"/luzes\"}], [{\"text\":\"🚪 Vou Sair\", \"callback_data\":\"/sair\"}, {\"text\":\"📍 Cidade\", \"callback_data\":\"/cidade\"}], [{\"text\":\"🔇 Som\", \"callback_data\":\"/silencioso\"}]]";
 String tecladoAcoes = "[[{\"text\":\"🔄 Atualizar\", \"callback_data\":\"/clima\"}, {\"text\":\"💡 Luzes\", \"callback_data\":\"/luzes\"}], [{\"text\":\"📍 Cidade\", \"callback_data\":\"/cidade\"}, {\"text\":\"🔇 Som\", \"callback_data\":\"/silencioso\"}]]";
 
-// ==========================================
-// PÁGINA HTML COMPLETA (Atmos)
-// ==========================================
+
+// PÁGINA HTML
 const char PAGE_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -363,9 +356,8 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-// ==========================================
+
 // FUNÇÕES AUXILIARES
-// ==========================================
 String formatarURL(String texto) {
   String original = texto;
   original.replace(" ", "%20");
@@ -391,9 +383,8 @@ void atualizarSemaforo(float tempQuarto, float tempFora) {
   else if (diferenca >= 4.0) digitalWrite(LED_VERMELHO, HIGH); 
 }
 
-// ==========================================
+
 // FUNÇÕES DO SERVIDOR WEB E API
-// ==========================================
 void handleRoot() { server.send(200, "text/html", PAGE_HTML); }
 
 void handleData() {
@@ -462,9 +453,8 @@ void handleConfig() {
   server.send(200, "text/plain", "OK");
 }
 
-// ==========================================
+
 // FUNÇÕES DE CLIMA E TELEGRAM
-// ==========================================
 void enviarPrevisaoDetalhada(String chat_id, int horaRetorno) {
   if (WiFi.status() == WL_CONNECTED) {
     bot.sendMessage(chat_id, "📡 Buscando dados meteorológicos...", "");
