@@ -16,7 +16,7 @@
 // ==========================================
 // CONFIGURAÇÕES DO USUÁRIO
 // ==========================================
-String city = "Curitiba,BR";
+String city = "Curitiba,PR,BR"; 
 String nomeCidade = "Curitiba"; 
 
 int HORA_ALERTA = 7;   
@@ -43,8 +43,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #define BOTAO_RELATORIO 18
 #define BOTAO_LUZES 19
 
-#define PINO_PIR 13
-
 // ==========================================
 // VARIÁVEIS GLOBAIS DE ESTADO
 // ==========================================
@@ -57,8 +55,6 @@ WebServer server(80);
 
 bool mensagemEnviadaHoje = false;
 bool luzesAcesas = true; 
-
-// Variável do Modo Silencioso
 bool modoSilencioso = false; 
 
 float tempQuartoAtual = 0.0;
@@ -74,19 +70,17 @@ bool ultimoEstadoLuzes = HIGH;
 
 int tempoVerificacaoBot = 1000; 
 unsigned long ultimaVerificacaoBot = 0;
+
+// Variáveis de conversação do Bot
 bool esperandoHoraRetorno = false;
+bool esperandoNomeCidade = false; 
 
-// Lógica do Sensor PIR
-bool modoAutomaticoPIR = true; 
-unsigned long tempoUltimoMovimento = 0;
-const unsigned long TEMPO_ECRA_LIGADO = 30000; 
-
-// Teclados do Telegram (Agora com o botão de Som)
-String tecladoPrincipal = "[[{\"text\":\"🌡️ Clima\", \"callback_data\":\"/clima\"}, {\"text\":\"💡 Luzes\", \"callback_data\":\"/luzes\"}], [{\"text\":\"🚪 Vou Sair\", \"callback_data\":\"/sair\"}, {\"text\":\"🔇 Som\", \"callback_data\":\"/silencioso\"}]]";
-String tecladoAcoes = "[[{\"text\":\"🔄 Atualizar\", \"callback_data\":\"/clima\"}, {\"text\":\"💡 Luzes\", \"callback_data\":\"/luzes\"}], [{\"text\":\"🔇 Som\", \"callback_data\":\"/silencioso\"}]]";
+// Teclados do Telegram
+String tecladoPrincipal = "[[{\"text\":\"🌡️ Clima\", \"callback_data\":\"/clima\"}, {\"text\":\"💡 Luzes\", \"callback_data\":\"/luzes\"}], [{\"text\":\"🚪 Vou Sair\", \"callback_data\":\"/sair\"}, {\"text\":\"📍 Cidade\", \"callback_data\":\"/cidade\"}], [{\"text\":\"🔇 Som\", \"callback_data\":\"/silencioso\"}]]";
+String tecladoAcoes = "[[{\"text\":\"🔄 Atualizar\", \"callback_data\":\"/clima\"}, {\"text\":\"💡 Luzes\", \"callback_data\":\"/luzes\"}], [{\"text\":\"📍 Cidade\", \"callback_data\":\"/cidade\"}, {\"text\":\"🔇 Som\", \"callback_data\":\"/silencioso\"}]]";
 
 // ==========================================
-// PÁGINA HTML COMPLETA 
+// PÁGINA HTML COMPLETA (Atmos)
 // ==========================================
 const char PAGE_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -94,7 +88,7 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Assistente Matinal IoT</title>
+  <title>Atmos IoT</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
     :root {
@@ -106,7 +100,7 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
       margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center;
       background-image: radial-gradient(circle at top left, #1e293b, #0f172a); min-height: 100vh;
     }
-    h1 { font-weight: 600; margin-bottom: 5px; text-align: center; animation: fadeIn 1s ease-in; }
+    h1 { font-weight: 600; margin-bottom: 5px; text-align: center; animation: fadeIn 1s ease-in; letter-spacing: 1px;}
     p.subtitle { color: #94a3b8; font-size: 0.9em; margin-bottom: 20px; text-align: center;}
     
     .tabs { display: flex; gap: 10px; margin-bottom: 20px; width: 100%; max-width: 600px; justify-content: center;}
@@ -145,18 +139,21 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
 
     .settings {
       background: var(--glass); border: 1px solid var(--border); border-radius: 16px; padding: 20px;
-      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
     }
-    input[type="time"] {
+    
+    select, input[type="time"] {
       background: rgba(0,0,0,0.2); border: 1px solid var(--border); color: white;
-      padding: 10px; border-radius: 8px; font-family: inherit; font-size: 1em;
+      padding: 10px; border-radius: 8px; font-family: inherit; font-size: 0.9em; outline: none; width: 100%;
     }
+    select option { background: #1e293b; color: white; }
+
     .status { text-align: center; font-size: 0.8em; color: #64748b; margin-top: 20px; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   </style>
 </head>
 <body>
-  <h1>Assistente Matinal</h1>
+  <h1>Atmos</h1>
   <p class="subtitle" id="top-status">Conectado</p>
 
   <div class="tabs">
@@ -167,12 +164,12 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
   <div id="dash" class="tab-content active">
     <div class="grid">
       <div class="card">
-        <h3>🏠 Quarto</h3>
+        <h3>🏠 Sensor Interno</h3>
         <p class="value" id="t-quarto">--°C</p>
         <p class="sub" id="h-quarto">Umidade: --%</p>
       </div>
       <div class="card">
-        <h3 id="nome-cidade-web">☁️ Exterior</h3>
+        <h3 id="nome-cidade-web">☁️ Lá Fora</h3>
         <p class="value" id="t-fora">--°C</p>
         <p class="sub" id="c-fora">--</p>
       </div>
@@ -181,18 +178,37 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
     <div class="grid">
       <button class="btn btn-dark" id="btn-luz" onclick="sendCommand('luzes')">💡 Modo Noturno</button>
       <button class="btn" id="btn-som" onclick="sendCommand('silencioso')">🔊 Som: Ligado</button>
-      <button class="btn" id="btn-pir" onclick="sendCommand('pir')">🏃 Auto PIR: ON</button>
       <button class="btn" onclick="sendCommand('relatorio')" style="grid-column: 1 / -1;">📩 Enviar Relatório ao Telegram</button>
     </div>
 
     <div class="settings">
-      <div>
+      <div style="flex: 1; min-width: 150px;">
         <h3 style="margin: 0; font-size: 1em;">⏰ Alarme</h3>
         <p style="margin: 0; font-size: 0.8em; color: #94a3b8;">Notificação Matinal</p>
       </div>
       <div style="display: flex; gap: 10px;">
         <input type="time" id="alarm-time" value="07:00">
         <button class="btn" style="width: auto; padding: 10px;" onclick="saveAlarm()">Salvar</button>
+      </div>
+    </div>
+
+    <div class="settings" style="flex-direction: column; align-items: flex-start;">
+      <div style="width: 100%;">
+        <h3 style="margin: 0; font-size: 1em;">📍 Localização (Brasil)</h3>
+        <p style="margin: 0 0 10px 0; font-size: 0.8em; color: #94a3b8;">Atual: <span id="current-city" style="color:#fff;">Carregando...</span></p>
+      </div>
+      <div style="display: flex; gap: 10px; width: 100%; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 100px;">
+          <select id="estado-select" onchange="loadCities()">
+            <option value="">Estado...</option>
+          </select>
+        </div>
+        <div style="flex: 2; min-width: 150px;">
+          <select id="cidade-select">
+            <option value="">Selecione o Estado primeiro...</option>
+          </select>
+        </div>
+        <button class="btn" style="width: 100%; padding: 10px;" onclick="saveCity()">Salvar Cidade</button>
       </div>
     </div>
   </div>
@@ -233,10 +249,44 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
     }
 
     function formatUptime(seconds) {
-      let h = Math.floor(seconds / 3600);
-      let m = Math.floor((seconds % 3600) / 60);
-      let s = seconds % 60;
+      let h = Math.floor(seconds / 3600); let m = Math.floor((seconds % 3600) / 60); let s = seconds % 60;
       return `${h}h ${m}m ${s}s`;
+    }
+
+    function loadStates() {
+      fetch('https://servicodados.ibge.gov.br/api/v1/localidades/estados?orderBy=nome')
+        .then(res => res.json())
+        .then(estados => {
+          let select = document.getElementById('estado-select');
+          estados.forEach(est => {
+            let opt = document.createElement('option');
+            opt.value = est.sigla; 
+            opt.innerText = est.nome;
+            select.appendChild(opt);
+          });
+        });
+    }
+
+    function loadCities() {
+      let uf = document.getElementById('estado-select').value;
+      let citySelect = document.getElementById('cidade-select');
+      citySelect.innerHTML = '<option value="">Carregando...</option>';
+      
+      if(uf) {
+        fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`)
+          .then(res => res.json())
+          .then(cidades => {
+            citySelect.innerHTML = '<option value="">Selecione a Cidade...</option>';
+            cidades.forEach(cid => {
+              let opt = document.createElement('option');
+              opt.value = cid.nome; 
+              opt.innerText = cid.nome;
+              citySelect.appendChild(opt);
+            });
+          });
+      } else {
+        citySelect.innerHTML = '<option value="">Selecione o Estado primeiro...</option>';
+      }
     }
 
     function fetchData() {
@@ -246,40 +296,27 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
           document.getElementById('t-quarto').innerText = data.t_quarto + '°C';
           document.getElementById('h-quarto').innerText = 'Umidade: ' + data.h_quarto + '%';
           document.getElementById('nome-cidade-web').innerText = '☁️ ' + data.cidade;
+          document.getElementById('current-city').innerText = data.cidade; 
           document.getElementById('t-fora').innerText = data.t_fora + '°C';
           document.getElementById('c-fora').innerText = data.c_fora;
           document.getElementById('top-status').innerText = '🟢 Wi-Fi: ' + data.wifi_rssi + ' dBm';
           
           let btnLuz = document.getElementById('btn-luz');
           if(data.luzes) {
-            btnLuz.innerText = "💡 Desligar Luzes";
-            btnLuz.className = "btn btn-dark";
+            btnLuz.innerText = "💡 Desligar Luzes"; btnLuz.className = "btn btn-dark";
           } else {
-            btnLuz.innerText = "🌙 Ligar Luzes";
-            btnLuz.className = "btn";
-          }
-
-          let btnPir = document.getElementById('btn-pir');
-          if(data.pir) {
-            btnPir.innerText = "🏃 Auto PIR: ON";
-            btnPir.className = "btn";
-          } else {
-            btnPir.innerText = "🛑 Auto PIR: OFF";
-            btnPir.className = "btn btn-dark";
+            btnLuz.innerText = "🌙 Ligar Luzes"; btnLuz.className = "btn";
           }
 
           let btnSom = document.getElementById('btn-som');
           if(data.silencioso) {
-            btnSom.innerText = "🔇 Som: Mudo";
-            btnSom.className = "btn btn-dark";
+            btnSom.innerText = "🔇 Som: Mudo"; btnSom.className = "btn btn-dark";
           } else {
-            btnSom.innerText = "🔊 Som: Ligado";
-            btnSom.className = "btn";
+            btnSom.innerText = "🔊 Som: Ligado"; btnSom.className = "btn";
           }
 
           if(document.activeElement !== document.getElementById('alarm-time')) {
-            let h = data.hora.toString().padStart(2, '0');
-            let m = data.minuto.toString().padStart(2, '0');
+            let h = data.hora.toString().padStart(2, '0'); let m = data.minuto.toString().padStart(2, '0');
             document.getElementById('alarm-time').value = `${h}:${m}`;
           }
 
@@ -289,12 +326,12 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
           document.getElementById('sys-tg').innerText = data.status_tg;
           document.getElementById('sys-weather').innerText = data.status_weather;
           
-          let now = new Date();
-          document.getElementById('last-update').innerText = now.toLocaleTimeString();
+          let now = new Date(); document.getElementById('last-update').innerText = now.toLocaleTimeString();
         });
     }
 
     function sendCommand(cmd) { fetch('/api/command?action=' + cmd).then(() => fetchData()); }
+    
     function saveAlarm() {
       let timeVal = document.getElementById('alarm-time').value;
       if(timeVal) {
@@ -303,6 +340,22 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
       }
     }
 
+    function saveCity() {
+      let uf = document.getElementById('estado-select').value;
+      let city = document.getElementById('cidade-select').value;
+      
+      if(uf && city) {
+        let apiSearch = city + "," + uf + ",BR";
+        fetch(`/api/config?citySearch=${encodeURIComponent(apiSearch)}&cityName=${encodeURIComponent(city)}`).then(() => {
+          alert('📍 Localização atualizada com sucesso! Buscando clima...');
+          fetchData(); 
+        });
+      } else {
+        alert('Por favor, selecione o Estado e a Cidade.');
+      }
+    }
+
+    loadStates();
     fetchData();
     setInterval(fetchData, 3000);
   </script>
@@ -311,14 +364,17 @@ const char PAGE_HTML[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // ==========================================
-// FUNÇÕES DE HARDWARE (BUZZER E LUZES)
+// FUNÇÕES AUXILIARES
 // ==========================================
+String formatarURL(String texto) {
+  String original = texto;
+  original.replace(" ", "%20");
+  return original;
+}
+
 void apitarBuzzer(int tempoMs) {
-  // A mágica acontece aqui: só apita se NÃO estiver no modo silencioso
   if (!modoSilencioso) {
-    digitalWrite(PINO_BUZZER, HIGH); 
-    delay(tempoMs); 
-    digitalWrite(PINO_BUZZER, LOW);
+    digitalWrite(PINO_BUZZER, HIGH); delay(tempoMs); digitalWrite(PINO_BUZZER, LOW);
   }
 }
 
@@ -348,8 +404,7 @@ void handleData() {
   json += "\"c_fora\":\"" + condicaoFora + "\",";
   json += "\"cidade\":\"" + nomeCidade + "\",";
   json += "\"luzes\":" + String(luzesAcesas ? "true" : "false") + ",";
-  json += "\"pir\":" + String(modoAutomaticoPIR ? "true" : "false") + ",";
-  json += "\"silencioso\":" + String(modoSilencioso ? "true" : "false") + ","; // NOVO: Estado do som
+  json += "\"silencioso\":" + String(modoSilencioso ? "true" : "false") + ",";
   json += "\"hora\":" + String(HORA_ALERTA) + ",";
   json += "\"minuto\":" + String(MINUTO_ALERTA) + ",";
   json += "\"wifi_rssi\":" + String(WiFi.RSSI()) + ",";
@@ -375,12 +430,9 @@ void handleCommand() {
         atualizarDisplay(tempQuartoAtual, tempForaAtual); atualizarSemaforo(tempQuartoAtual, tempForaAtual);
       }
     } 
-    else if (action == "pir") {
-      modoAutomaticoPIR = !modoAutomaticoPIR; apitarBuzzer(100);
-    }
     else if (action == "silencioso") {
       modoSilencioso = !modoSilencioso; 
-      if (!modoSilencioso) apitarBuzzer(100); // Dá um bipe de confirmação quando volta a ligar o som
+      if (!modoSilencioso) apitarBuzzer(100);
     }
     else if (action == "relatorio") { apitarBuzzer(100); enviarRelatorioMatinal(tempQuartoAtual); }
   }
@@ -391,6 +443,22 @@ void handleConfig() {
   if (server.hasArg("h") && server.hasArg("m")) {
     HORA_ALERTA = server.arg("h").toInt(); MINUTO_ALERTA = server.arg("m").toInt();
   }
+  
+  if (server.hasArg("citySearch") && server.hasArg("cityName")) {
+    city = server.arg("citySearch");   
+    nomeCidade = server.arg("cityName"); 
+    apitarBuzzer(100);
+    buscarTemperaturaExterna(); 
+    atualizarDisplay(tempQuartoAtual, tempForaAtual); 
+  } 
+  else if (server.hasArg("city")) {
+    city = server.arg("city");
+    nomeCidade = city;
+    apitarBuzzer(100);
+    buscarTemperaturaExterna(); 
+    atualizarDisplay(tempQuartoAtual, tempForaAtual); 
+  }
+  
   server.send(200, "text/plain", "OK");
 }
 
@@ -402,7 +470,7 @@ void enviarPrevisaoDetalhada(String chat_id, int horaRetorno) {
     bot.sendMessage(chat_id, "📡 Buscando dados meteorológicos...", "");
     apitarBuzzer(100);
     HTTPClient http;
-    http.begin("http://api.openweathermap.org/data/2.5/forecast?q=" + city + "&units=metric&lang=pt_br&appid=" + String(OPENWEATHER_API_KEY) + "&cnt=8");
+    http.begin("http://api.openweathermap.org/data/2.5/forecast?q=" + formatarURL(city) + "&units=metric&lang=pt_br&appid=" + String(OPENWEATHER_API_KEY) + "&cnt=8");
     if (http.GET() > 0) {
       DynamicJsonDocument doc(4096); deserializeJson(doc, http.getString());
       bool precisaGuardaChuva = false; float chuvaTotal = 0.0; int maxPop = 0; 
@@ -453,10 +521,33 @@ void lidarComMensagensNovas(int numNovasMensagens) {
       else bot.sendMessage(chat_id, "Formato inválido. Digite 0 a 23.", "");
       continue; 
     }
+    
+    if (esperandoNomeCidade) {
+      if (texto.startsWith("/")) { 
+        esperandoNomeCidade = false; 
+        bot.sendMessageWithInlineKeyboard(chat_id, "Configuração de cidade cancelada.", "", tecladoPrincipal); 
+      } else { 
+        esperandoNomeCidade = false; 
+        city = texto; 
+        nomeCidade = texto; 
+        
+        bot.sendMessage(chat_id, "📍 Cidade atualizada para: " + city + "\nBuscando novos dados meteorológicos...", "");
+        apitarBuzzer(100);
+        
+        buscarTemperaturaExterna(); 
+        atualizarDisplay(tempQuartoAtual, tempForaAtual);
+        enviarRelatorioMatinal(tempQuartoAtual); 
+      }
+      continue; 
+    }
 
-    if (texto == "/start") { bot.sendMessageWithInlineKeyboard(chat_id, "Olá, " + nome_usuario + "!\nSelecione uma opção:", "", tecladoPrincipal); }
+    if (texto == "/start") { bot.sendMessageWithInlineKeyboard(chat_id, "Olá, " + nome_usuario + "!\nEu sou o Atmos, seu assistente IoT.\nSelecione uma opção:", "", tecladoPrincipal); }
     else if (texto == "/clima") enviarRelatorioMatinal(tempQuartoAtual);
     else if (texto == "/sair") { esperandoHoraRetorno = true; bot.sendMessage(chat_id, "A que horas você pretende voltar? (formato 24h, ex: 18)", ""); }
+    else if (texto == "/cidade") {
+      esperandoNomeCidade = true;
+      bot.sendMessage(chat_id, "📍 Qual cidade você quer monitorar agora?\nDigite o nome (ex: São Paulo,BR ou Lisboa,PT):", "");
+    }
     else if (texto == "/luzes") {
       luzesAcesas = !luzesAcesas; apitarBuzzer(100);
       if (!luzesAcesas) {
@@ -482,7 +573,7 @@ void lidarComMensagensNovas(int numNovasMensagens) {
 float buscarTemperaturaExterna() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    http.begin("http://api.openweathermap.org/data/2.5/weather?q=" + city + "&units=metric&lang=pt_br&appid=" + String(OPENWEATHER_API_KEY));
+    http.begin("http://api.openweathermap.org/data/2.5/weather?q=" + formatarURL(city) + "&units=metric&lang=pt_br&appid=" + String(OPENWEATHER_API_KEY));
     if (http.GET() > 0) {
       DynamicJsonDocument doc(1024); deserializeJson(doc, http.getString());
       condicaoFora = doc["weather"][0]["description"].as<String>(); 
@@ -500,12 +591,12 @@ float buscarTemperaturaExterna() {
 void enviarRelatorioMatinal(float tempQuarto) {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    http.begin("http://api.openweathermap.org/data/2.5/weather?q=" + city + "&units=metric&lang=pt_br&appid=" + String(OPENWEATHER_API_KEY));
+    http.begin("http://api.openweathermap.org/data/2.5/weather?q=" + formatarURL(city) + "&units=metric&lang=pt_br&appid=" + String(OPENWEATHER_API_KEY));
     if (http.GET() > 0) {
       DynamicJsonDocument doc(1024); deserializeJson(doc, http.getString());
       float tempFora = doc["main"]["temp"]; float diferenca = tempQuarto - tempFora;
       
-      String mensagem = "☀️ Relatório:\n\n🏠 Temp Quarto: " + String(tempQuarto, 1) + "°C\n💧 Umidade: " + String(umidadeQuartoAtual, 1) + "%\n☁️ Temp. em " + nomeCidade + ": " + String(tempFora, 1) + "°C\n\nCondição: " + doc["weather"][0]["description"].as<String>();
+      String mensagem = "☀️ Relatório Atmos:\n\n🏠 Sensor Interno: " + String(tempQuarto, 1) + "°C\n💧 Umidade: " + String(umidadeQuartoAtual, 1) + "%\n☁️ Temp. em " + nomeCidade + ": " + String(tempFora, 1) + "°C\n\nCondição: " + doc["weather"][0]["description"].as<String>();
       
       if (bot.sendMessageWithInlineKeyboard(CHAT_ID, mensagem, "", tecladoAcoes)) {
         apitarBuzzer(200); delay(100); apitarBuzzer(200);
@@ -535,8 +626,6 @@ void setup() {
   Serial.begin(115200);
   pinMode(LED_VERDE, OUTPUT); pinMode(LED_AMARELO, OUTPUT); pinMode(LED_VERMELHO, OUTPUT); pinMode(PINO_BUZZER, OUTPUT);
   pinMode(BOTAO_RELATORIO, INPUT_PULLUP); pinMode(BOTAO_LUZES, INPUT_PULLUP);
-  
-  pinMode(PINO_PIR, INPUT);
   
   digitalWrite(LED_VERDE, LOW); digitalWrite(LED_AMARELO, LOW); digitalWrite(LED_VERMELHO, LOW); digitalWrite(PINO_BUZZER, LOW);
 
@@ -573,7 +662,6 @@ void loop() {
     ultimaVerificacaoBot = millis();
   }
 
-  // Lógica dos Botões Físicos
   if (digitalRead(BOTAO_RELATORIO) == LOW && ultimoEstadoRelatorio == HIGH) { apitarBuzzer(100); enviarRelatorioMatinal(tempQuartoAtual); }
   ultimoEstadoRelatorio = digitalRead(BOTAO_RELATORIO);
 
@@ -589,26 +677,6 @@ void loop() {
     }
   }
   ultimoEstadoLuzes = digitalRead(BOTAO_LUZES);
-
-  // LÓGICA DO SENSOR DE MOVIMENTO (PIR)
-  if (modoAutomaticoPIR) {
-    if (digitalRead(PINO_PIR) == HIGH) {
-      tempoUltimoMovimento = millis(); 
-      if (!luzesAcesas) {
-        luzesAcesas = true;
-        display.ssd1306_command(SSD1306_DISPLAYON); 
-        atualizarDisplay(tempQuartoAtual, tempForaAtual); 
-        atualizarSemaforo(tempQuartoAtual, tempForaAtual);
-      }
-    } else {
-      if (luzesAcesas && (millis() - tempoUltimoMovimento > TEMPO_ECRA_LIGADO)) {
-        luzesAcesas = false;
-        display.clearDisplay(); display.display(); delay(50); 
-        display.ssd1306_command(SSD1306_DISPLAYOFF); 
-        digitalWrite(LED_VERDE, LOW); digitalWrite(LED_AMARELO, LOW); digitalWrite(LED_VERMELHO, LOW);
-      }
-    }
-  }
 
   static unsigned long ultimoUpdateSensores = 0;
   if (millis() - ultimoUpdateSensores > 2000 || ultimoUpdateSensores == 0) {
